@@ -6,79 +6,37 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace RemoteSync
 {
     class MainClass
     {
-        private static Renci.SshNet.ScpClient CreateScpClient(string target, out string targetDirectory)
+        private static ISyncClientFactory GetSyncClientFactory(string type)
         {
-            var pattern = new Regex("^(.*)@(.*):(.*)");
-            var match = pattern.Match(target);
-            if (!match.Success)
+            switch (type)
             {
-                throw new ArgumentException("Invalid target " + target);
+                case "scp": return new ScpSyncClientFactory();
+                case "ftp": return new FtpSyncClientFactory();
+                default: throw new ArgumentException("Unknown sync client " + type);
             }
-
-            var user = match.Groups[1].Value;
-            var host = match.Groups[2].Value;
-            targetDirectory = match.Groups[3].Value;
-
-            var keyDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".ssh");
-            var keyFiles = new List<Renci.SshNet.PrivateKeyFile>();
-            foreach (var i in Directory.EnumerateFiles(keyDirectory))
-            {
-                if (File.Exists(i + ".pub"))
-                {
-                    keyFiles.Add(new Renci.SshNet.PrivateKeyFile(i));
-                }
-            }
-
-            return new Renci.SshNet.ScpClient(host, user, keyFiles.ToArray());
-        }
-
-        private static Renci.SshNet.SshClient CreateSshClient(string target, out string targetDirectory)
-        {
-            var pattern = new Regex("^(.*)@(.*):(.*)");
-            var match = pattern.Match(target);
-            if (!match.Success)
-            {
-                throw new ArgumentException("Invalid target " + target);
-            }
-
-            var user = match.Groups[1].Value;
-            var host = match.Groups[2].Value;
-            targetDirectory = match.Groups[3].Value;
-
-            var keyDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".ssh");
-            var keyFiles = new List<Renci.SshNet.PrivateKeyFile>();
-            foreach (var i in Directory.EnumerateFiles(keyDirectory))
-            {
-                if (File.Exists(i + ".pub"))
-                {
-                    keyFiles.Add(new Renci.SshNet.PrivateKeyFile(i));
-                }
-            }
-
-            return new Renci.SshNet.SshClient(host, user, keyFiles.ToArray());
         }
 
         public static void Main(string[] args)
         {
             var argIndex = 0;
             var source = args[argIndex++];
+            var targetType = args[argIndex++];
             var target = args[argIndex++];
 
             Console.WriteLine("Source: {0}", source);
-            Console.WriteLine("Target: {0}", target);
+            Console.WriteLine("Target: {0} {1}", targetType, target);
 
-            // somehow SSH is not working without this...
+            var syncClientFactory = GetSyncClientFactory(targetType);
+
+            using (var syncClient = syncClientFactory.Create(target))
             {
-                string targetDirectory;
-                using (var c = CreateSshClient(target, out targetDirectory))
-                {
-                    c.Connect();
-                }
+                syncClient.Test();
             }
 
             var uploadQueue = new BlockingCollection<string>();
@@ -87,39 +45,39 @@ namespace RemoteSync
             {
                 try
                 {
-                    string targetDirectory;
-                    using (var scp = CreateScpClient(target, out targetDirectory))
+                    using (var syncClient = syncClientFactory.Create(target))
                     {
-                        scp.Connect();
-                        targetDirectory = targetDirectory.TrimEnd('/');
-
-                        var ignoreErrorRegex = new Regex("^scp: .*: set times: Operation not permitted$");
                         while (!uploadQueue.IsCompleted)
                         {
                             var sourceFile = uploadQueue.Take();
                             var targetFile = sourceFile;
                             if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
                             {
-                                targetFile = targetDirectory + "/" +
-                                    targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
+                                targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
                             }
 
-                            Console.WriteLine("Upload file:{0} to:{1}", sourceFile, targetFile);
+                            Console.WriteLine("[{0}] Upload file:{1} to:{2}", DateTime.Now, sourceFile, targetFile);
                             try
                             {
-                                scp.Upload(new FileInfo(sourceFile), targetFile);
+                                syncClient.Upload(sourceFile, targetFile);
                             }
-                            catch (Renci.SshNet.Common.ScpException ex)
+                            catch (Exception ex)
                             {
-                                if (!ignoreErrorRegex.IsMatch(ex.Message))
+                                Console.Error.WriteLine(ex);
+                                syncClient.Close();
+                                Thread.Sleep(1000);
+                                lock (uploadQueue)
                                 {
-                                    throw;
+                                    if (!uploadQueue.Contains(sourceFile))
+                                    {
+                                        uploadQueue.Add(sourceFile);
+                                    }
                                 }
                             }
 
                             if (uploadQueue.Count == 0)
                             {
-                                Console.WriteLine("Waiting");
+                                Console.WriteLine("[{0}] Waiting", DateTime.Now);
                             }
                         }
                     }
@@ -138,12 +96,9 @@ namespace RemoteSync
             var syncThread = new Thread(_ =>
             {
                 Console.WriteLine("Sync started");
-               
-                string targetDirectory;
-                using (var ssh = CreateSshClient(target, out targetDirectory))
-                {
-                    ssh.Connect();
 
+                using (var syncClient = syncClientFactory.Create(target))
+                {
                     foreach (var i in Directory.EnumerateFiles(source))
                     {
                         if (i.Split(Path.DirectorySeparatorChar).Any(j => j.StartsWith(".", StringComparison.Ordinal)))
@@ -154,20 +109,32 @@ namespace RemoteSync
                         var targetFile = i;
                         if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
                         {
-                            targetFile = targetDirectory + "/" +
-                                targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
+                            targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
                         }
 
-                        var info = ssh.RunCommand("ls -l \"" + targetFile + "\"").Result.Trim();
-                        var fileSize = !string.IsNullOrEmpty(info) ? long.Parse(info.Split(' ')[4]) : 0;
-                        if (fileSize != new FileInfo(i).Length)
+                        for (;;)
                         {
-                            lock (uploadQueue)
+                            try
                             {
-                                if (!uploadQueue.Contains(i))
+                                var fileSize = syncClient.GetFileSize(targetFile);
+                                if (fileSize != new FileInfo(i).Length)
                                 {
-                                    uploadQueue.Add(i);
+                                    lock (uploadQueue)
+                                    {
+                                        if (!uploadQueue.Contains(i))
+                                        {
+                                            uploadQueue.Add(i);
+                                        }
+                                    }
                                 }
+
+                                break;
+                            }
+                            catch (Renci.SshNet.Common.SshException ex)
+                            {
+                                Console.Error.WriteLine(ex);
+                                syncClient.Close();
+                                Thread.Sleep(1000);
                             }
                         }
                     }
@@ -182,50 +149,33 @@ namespace RemoteSync
             syncThread.Start();
 
             Console.WriteLine("Watch started");
-            var fswatchProcess = new Process
+            var fswatchProcess = new SimpleProcess
             {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "/usr/local/bin/fswatch",
-                    Arguments = "--help",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                },
+                FileName = "/usr/local/bin/fswatch",
+                Arguments = "--help",
             };
-            fswatchProcess.Start();
-            fswatchProcess.WaitForExit();
-            if (fswatchProcess.ExitCode == 0)
+            if (fswatchProcess.Run() == 0)
             {
                 Console.WriteLine("Use fswatch");
 
                 // use fswatch if possible because FileSystemWatcher is not working nice on Mono
-                fswatchProcess = new Process
+                fswatchProcess.Arguments = "-r .";
+                fswatchProcess.WorkingDirectory = source;
+                fswatchProcess.OutputReader = data =>
                 {
-                    StartInfo = new ProcessStartInfo
-                    {
-                        FileName = fswatchProcess.StartInfo.FileName,
-                        Arguments = "-r .",
-                        WorkingDirectory = source,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                    },
-                };
-                fswatchProcess.OutputDataReceived += (sender, e) =>
-                {
-                    if (!string.IsNullOrEmpty(e.Data) && File.Exists(e.Data) &&
-                        !e.Data.Split(Path.DirectorySeparatorChar).Any(i => i.StartsWith(".", StringComparison.Ordinal)))
+                    if (!string.IsNullOrEmpty(data) && File.Exists(data) &&
+                        !data.Split(Path.DirectorySeparatorChar).Any(i => i.StartsWith(".", StringComparison.Ordinal)))
                     {
                         lock (uploadQueue)
                         {
-                            if (!uploadQueue.Contains(e.Data))
+                            if (!uploadQueue.Contains(data))
                             {
-                                uploadQueue.Add(e.Data);
+                                uploadQueue.Add(data);
                             }
                         }
                     }
                 };
-                fswatchProcess.Start();
-                fswatchProcess.BeginOutputReadLine();
+                Task<int> fswatchTask = Task.Run(fswatchProcess.Run);
                 for (;;)
                 {
                     {
@@ -237,7 +187,7 @@ namespace RemoteSync
                     }
 
 
-                    if (fswatchProcess.WaitForExit(1000))
+                    if (fswatchTask.Wait(1000))
                     {
                         throw new InvalidOperationException("Fswatch terminated unexpectedly");
                     }

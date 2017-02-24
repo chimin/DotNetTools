@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <PropertyGroup Condition=" '$(RunConfiguration)' == 'Default' ">
-    <StartAction>Project</StartAction>
-    <StartArguments>/Users/chimin/Desktop/Works/topgate/Phase2_Backend chimin.ng@devge.triple-pg.com:/web_files/pg_demo/devbackend</StartArguments>
-    <ExternalConsole>true</ExternalConsole>
-  </PropertyGroup>
-</Project>

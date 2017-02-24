@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2012
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RemoteSync", "RemoteSync.csproj", "{6E22CE43-2F9D-4274-9E14-79007E6004E5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Renci.SshNet.NET35", "..\SSH.NET\src\Renci.SshNet.NET35\Renci.SshNet.NET35.csproj", "{DD1C552F-7F48-4269-ABB3-2E4C89B7E43A}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x86 = Debug|x86
@@ -15,9 +13,5 @@ Global
 		{6E22CE43-2F9D-4274-9E14-79007E6004E5}.Debug|x86.Build.0 = Debug|x86
 		{6E22CE43-2F9D-4274-9E14-79007E6004E5}.Release|x86.ActiveCfg = Release|x86
 		{6E22CE43-2F9D-4274-9E14-79007E6004E5}.Release|x86.Build.0 = Release|x86
-		{DD1C552F-7F48-4269-ABB3-2E4C89B7E43A}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{DD1C552F-7F48-4269-ABB3-2E4C89B7E43A}.Debug|x86.Build.0 = Debug|Any CPU
-		{DD1C552F-7F48-4269-ABB3-2E4C89B7E43A}.Release|x86.ActiveCfg = Release|Any CPU
-		{DD1C552F-7F48-4269-ABB3-2E4C89B7E43A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
