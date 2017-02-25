@@ -33,18 +33,19 @@
     <Reference Include="Renci.SshNet">
       <HintPath>packages\SSH.NET.2013.4.7\lib\net40\Renci.SshNet.dll</HintPath>
     </Reference>
-    <Reference Include="ArxOne.Ftp">
-      <HintPath>packages\ArxOne.Ftp.1.12.0\lib\net40-Client\ArxOne.Ftp.dll</HintPath>
+    <Reference Include="FluentFTP">
+      <HintPath>packages\FluentFTP.16.2.3\lib\net40\FluentFTP.dll</HintPath>
     </Reference>
+    <Reference Include="System.Web" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="ISyncClientFactory.cs" />
     <Compile Include="ISyncClient.cs" />
     <Compile Include="ScpSyncClient.cs" />
     <Compile Include="SimpleProcess.cs" />
     <Compile Include="FtpSyncClient.cs" />
+    <Compile Include="FileUploadWorker.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

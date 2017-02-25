@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -22,6 +22,70 @@ namespace RemoteSync
             }
         }
 
+        private static void Log(string format, params object[] args)
+        {
+            Console.WriteLine("[" + DateTime.Now.ToString() + "] " + string.Format(format, args));
+        }
+
+        private static void LogError(Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+
+        private static bool ShouldSync(string file)
+        {
+            return (File.Exists(file) || Directory.Exists(file)) &&
+                !file.Split(Path.DirectorySeparatorChar).Any(i => i.StartsWith("."));
+        }
+
+        private static void Sync(ISyncClientFactory syncClientFactory, FileUploadWorker fileUploadWorker,
+                                 string source, string target)
+        {
+            using (var syncClient = syncClientFactory.Create(target))
+            {
+                foreach (var i in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories).Where(ShouldSync))
+                {
+                    var targetFile = i;
+                    if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
+                    }
+
+                    for (;;)
+                    {
+                        try
+                        {
+                            var fileSize = syncClient.GetFileSize(targetFile);
+                            if (fileSize != new FileInfo(i).Length)
+                            {
+                                Log("Sync file:{0}", targetFile);
+                                fileUploadWorker.Add(i);
+                            }
+
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            LogError(ex);
+                            syncClient.Close();
+                            Thread.Sleep(1000);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static Task SyncAsync(ISyncClientFactory syncClientFactory, FileUploadWorker fileUploadWorker,
+                                      string source, string target)
+        {
+            return Task.Factory.StartNew(() =>
+            {
+                Log("Sync started");
+                Sync(syncClientFactory, fileUploadWorker, source, target);
+                Log("Sync done");
+            }, TaskCreationOptions.LongRunning);
+        }
+
         public static void Main(string[] args)
         {
             var argIndex = 0;
@@ -29,126 +93,18 @@ namespace RemoteSync
             var targetType = args[argIndex++];
             var target = args[argIndex++];
 
-            Console.WriteLine("Source: {0}", source);
-            Console.WriteLine("Target: {0} {1}", targetType, target);
+            Log("Source: {0}", source);
+            Log("Target: {0} {1}", targetType, target);
+            Log("Starting");
 
             var syncClientFactory = GetSyncClientFactory(targetType);
+            var syncClient = syncClientFactory.Create(target);
+            syncClient.Test();
 
-            using (var syncClient = syncClientFactory.Create(target))
-            {
-                syncClient.Test();
-            }
+            var fileUploadWorker = new FileUploadWorker(syncClient, source, Log, LogError);
+            SyncAsync(syncClientFactory, fileUploadWorker, source, target);
 
-            var uploadQueue = new BlockingCollection<string>();
-            var uploadException = (Exception)null;
-            var uploadThread = new Thread(_ =>
-            {
-                try
-                {
-                    using (var syncClient = syncClientFactory.Create(target))
-                    {
-                        while (!uploadQueue.IsCompleted)
-                        {
-                            var sourceFile = uploadQueue.Take();
-                            var targetFile = sourceFile;
-                            if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
-                            {
-                                targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
-                            }
-
-                            Console.WriteLine("[{0}] Upload file:{1} to:{2}", DateTime.Now, sourceFile, targetFile);
-                            try
-                            {
-                                syncClient.Upload(sourceFile, targetFile);
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.Error.WriteLine(ex);
-                                syncClient.Close();
-                                Thread.Sleep(1000);
-                                lock (uploadQueue)
-                                {
-                                    if (!uploadQueue.Contains(sourceFile))
-                                    {
-                                        uploadQueue.Add(sourceFile);
-                                    }
-                                }
-                            }
-
-                            if (uploadQueue.Count == 0)
-                            {
-                                Console.WriteLine("[{0}] Waiting", DateTime.Now);
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    uploadException = ex;
-                }
-            })
-            {
-                Name = "Upload",
-                IsBackground = true,
-            };
-            uploadThread.Start();
-
-            var syncThread = new Thread(_ =>
-            {
-                Console.WriteLine("Sync started");
-
-                using (var syncClient = syncClientFactory.Create(target))
-                {
-                    foreach (var i in Directory.EnumerateFiles(source))
-                    {
-                        if (i.Split(Path.DirectorySeparatorChar).Any(j => j.StartsWith(".", StringComparison.Ordinal)))
-                        {
-                            continue;
-                        }
-
-                        var targetFile = i;
-                        if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
-                        {
-                            targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
-                        }
-
-                        for (;;)
-                        {
-                            try
-                            {
-                                var fileSize = syncClient.GetFileSize(targetFile);
-                                if (fileSize != new FileInfo(i).Length)
-                                {
-                                    lock (uploadQueue)
-                                    {
-                                        if (!uploadQueue.Contains(i))
-                                        {
-                                            uploadQueue.Add(i);
-                                        }
-                                    }
-                                }
-
-                                break;
-                            }
-                            catch (Renci.SshNet.Common.SshException ex)
-                            {
-                                Console.Error.WriteLine(ex);
-                                syncClient.Close();
-                                Thread.Sleep(1000);
-                            }
-                        }
-                    }
-                }
-
-                Console.WriteLine("Sync done");
-            })
-            {
-                Name = "Sync",
-                IsBackground = true,
-            };
-            syncThread.Start();
-
-            Console.WriteLine("Watch started");
+            Log("Watch started");
             var fswatchProcess = new SimpleProcess
             {
                 FileName = "/usr/local/bin/fswatch",
@@ -156,46 +112,31 @@ namespace RemoteSync
             };
             if (fswatchProcess.Run() == 0)
             {
-                Console.WriteLine("Use fswatch");
+                Log("Use fswatch");
 
                 // use fswatch if possible because FileSystemWatcher is not working nice on Mono
                 fswatchProcess.Arguments = "-r .";
                 fswatchProcess.WorkingDirectory = source;
                 fswatchProcess.OutputReader = data =>
                 {
-                    if (!string.IsNullOrEmpty(data) && File.Exists(data) &&
-                        !data.Split(Path.DirectorySeparatorChar).Any(i => i.StartsWith(".", StringComparison.Ordinal)))
+                    if (!string.IsNullOrEmpty(data) && ShouldSync(data))
                     {
-                        lock (uploadQueue)
+                        var targetFile = data;
+                        if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
                         {
-                            if (!uploadQueue.Contains(data))
-                            {
-                                uploadQueue.Add(data);
-                            }
+                            targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
                         }
+
+                        fileUploadWorker.Add(data);
                     }
                 };
-                Task<int> fswatchTask = Task.Run(fswatchProcess.Run);
-                for (;;)
-                {
-                    {
-                        var e = uploadException;
-                        if (e != null)
-                        {
-                            throw e;
-                        }
-                    }
 
-
-                    if (fswatchTask.Wait(1000))
-                    {
-                        throw new InvalidOperationException("Fswatch terminated unexpectedly");
-                    }
-                }
+                var exitCode = fswatchProcess.Run();
+                throw new InvalidOperationException("Fswatch terminated unexpectedly code:" + exitCode.ToString());
             }
             else
             {
-                Console.WriteLine("Use FileSystemWatcher");
+                Log("Use FileSystemWatcher");
                 
                 using (var fsw = new FileSystemWatcher
                 {
@@ -205,29 +146,16 @@ namespace RemoteSync
                 {
                     for (;;)
                     {
+                        var r = fsw.WaitForChanged(WatcherChangeTypes.All);
+                        if (!r.TimedOut && ShouldSync(r.Name))
                         {
-                            var e = uploadException;
-                            if (e != null)
+                            var targetFile = r.Name;
+                            if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
                             {
-                                throw e;
-                            }
-                        }
-
-                        var r = fsw.WaitForChanged(WatcherChangeTypes.All, 1000);
-                        if (!r.TimedOut && File.Exists(r.Name))
-                        {
-                            if (r.Name.Split(Path.DirectorySeparatorChar).Any(i => i.StartsWith(".", StringComparison.Ordinal)))
-                            {
-                                continue;
+                                targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
                             }
 
-                            lock (uploadQueue)
-                            {
-                                if (!uploadQueue.Contains(r.Name))
-                                {
-                                    uploadQueue.Add(r.Name);
-                                }
-                            }
+                            fileUploadWorker.Add(r.Name);
                         }
                     }
                 }

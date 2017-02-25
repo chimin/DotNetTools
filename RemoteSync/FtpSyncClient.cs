@@ -1,13 +1,14 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
-using ArxOne.Ftp;
 
 namespace RemoteSync
 {
     class FtpSyncClient : ISyncClient
     {
-        private ArxOne.Ftp.FtpClient ftp;
+        private FluentFTP.FtpClient ftp;
         private string user;
         private string password;
         private string host;
@@ -25,40 +26,61 @@ namespace RemoteSync
             user = match.Groups[1].Value;
             password = match.Groups[2].Value;
             host = match.Groups[3].Value;
-            directory = match.Groups[4].Value;        
+            directory = match.Groups[4].Value;
+
+            ftp = new FluentFTP.FtpClient
+            {
+                Host = host,
+                Credentials = new System.Net.NetworkCredential(user, password),
+            };
         }
 
         public void Dispose()
         {
-            Close();
+            ftp.Dispose();
         }
 
-        private ArxOne.Ftp.FtpClient GetFtpClient()
+        public void Test()
         {
-            if (ftp == null)
-            {
-                ftp = new ArxOne.Ftp.FtpClient(ArxOne.Ftp.FtpProtocol.Ftp,
-                                               host, 21,
-                                               new System.Net.NetworkCredential(user, password),
-                                               new FtpClientParameters
-                                               {
-                                                   Passive = true,
-                                               });
-            }
-            return ftp;
+            ftp.Connect();
         }
 
-        public void Test() { }
-
-        public void Upload(string sourceFile, string targetFile)
+        private Stream OpenWrite(string targetFile)
         {
             if (!targetFile.StartsWith("/"))
             {
                 targetFile = directory + "/" + targetFile;
             }
 
+            if (!ftp.IsConnected)
+            {
+                ftp.Connect();
+            }
+
+            try
+            {
+                return ftp.OpenWrite(targetFile);
+            }
+            catch (FluentFTP.FtpException)
+            {
+                var items = targetFile.Split('/');
+                var targetDirectory = "";
+                foreach (var i in items.Take(items.Length - 1))
+                {
+                    targetDirectory = targetDirectory + "/" + i;
+                    if (!ftp.DirectoryExists(targetDirectory))
+                    {
+                        ftp.CreateDirectory(targetDirectory);
+                    }
+                }
+                return ftp.OpenWrite(targetFile);
+            }
+        }
+
+        public void Upload(string sourceFile, string targetFile)
+        {
             using (var source = File.OpenRead(sourceFile))
-            using (var target = GetFtpClient().Stor(new FtpPath(targetFile)))
+            using (var target = OpenWrite(targetFile))
             {
                 source.CopyTo(target);
             }
@@ -71,17 +93,18 @@ namespace RemoteSync
                 targetFile = directory + "/" + targetFile;
             }
 
-            var ftpEntry = GetFtpClient().GetEntry(new FtpPath(targetFile));
-            return ftpEntry?.Size ?? 0;
+            if (!ftp.IsConnected)
+            {
+                ftp.Connect();
+            }
+
+            var fileSize = ftp.GetFileSize(targetFile);
+            return fileSize;
         }
 
         public void Close()
         {
-            if (ftp != null)
-            {
-                ftp.Dispose();
-                ftp = null;
-            }
+            ftp.Disconnect();
         }
     }
 

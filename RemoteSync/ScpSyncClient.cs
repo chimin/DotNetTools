@@ -82,6 +82,11 @@ namespace RemoteSync
 
         public long GetFileSize(string targetFile)
         {
+            if (!targetFile.StartsWith("/"))
+            {
+                targetFile = directory + "/" + targetFile;
+            }
+
             if (!ssh.IsConnected)
             {
                 ssh.Connect();

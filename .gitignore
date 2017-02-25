@@ -3,3 +3,5 @@ ConvertNewLine/obj
 RemoteSync/bin
 RemoteSync/obj
 RemoteSync/packages
+*.user
+*.userprefs

@@ -9,4 +9,9 @@ namespace RemoteSync
         long GetFileSize(string targetFile);
         void Close();
     }
+
+    interface ISyncClientFactory
+    {
+        ISyncClient Create(string target);
+    }
 }
