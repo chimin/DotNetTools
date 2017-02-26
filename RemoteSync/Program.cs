@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -24,18 +25,17 @@ namespace RemoteSync
 
         private static void Log(string format, params object[] args)
         {
-            Console.WriteLine("[" + DateTime.Now.ToString() + "] " + string.Format(format, args));
+            Console.WriteLine("[" + DateTime.Now.ToDateTimeString() + "] " + string.Format(format, args));
+        }
+
+        private static void LogError(string format, params object[] args)
+        {
+            Console.Error.WriteLine("[" + DateTime.Now.ToDateTimeString() + "] " + string.Format(format, args));
         }
 
         private static void LogError(Exception ex)
         {
-            Console.WriteLine(ex);
-        }
-
-        private static bool ShouldSync(string file)
-        {
-            return (File.Exists(file) || Directory.Exists(file)) &&
-                !file.Split(Path.DirectorySeparatorChar).Any(i => i.StartsWith("."));
+            Console.Error.WriteLine("[" + DateTime.Now.ToDateTimeString() + "] " + ex.ToString());
         }
 
         private static void Sync(ISyncClientFactory syncClientFactory, FileUploadWorker fileUploadWorker,
@@ -43,32 +43,47 @@ namespace RemoteSync
         {
             using (var syncClient = syncClientFactory.Create(target))
             {
-                foreach (var i in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories).Where(ShouldSync))
+                foreach (var i in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
                 {
-                    var targetFile = i;
-                    if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
+                    if (fileUploadWorker.ValidateFile(i))
                     {
-                        targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
-                    }
-
-                    for (;;)
-                    {
-                        try
+                        var targetFile = fileUploadWorker.ResolveTargetFile(i);
+                        for (;;)
                         {
-                            var fileSize = syncClient.GetFileSize(targetFile);
-                            if (fileSize != new FileInfo(i).Length)
+                            try
                             {
-                                Log("Sync file:{0}", targetFile);
-                                fileUploadWorker.Add(i);
-                            }
+                                var dirty = false;
+                                var sourceFileInfo = new FileInfo(i);
+                                var targetFileSize = syncClient.GetFileSize(targetFile);
+                                if (targetFileSize != null && sourceFileInfo.Length != targetFileSize.Value)
+                                {
+                                    Log("Sync file:{0} size:{1} {2}", 
+                                        targetFile, sourceFileInfo.Length, targetFileSize.Value);
+                                    dirty = true;
+                                }
 
-                            break;
-                        }
-                        catch (Exception ex)
-                        {
-                            LogError(ex);
-                            syncClient.Close();
-                            Thread.Sleep(1000);
+                                var targetFileTimestamp = syncClient.GetFileTimestamp(targetFile);
+                                if (targetFileTimestamp != null && sourceFileInfo.LastWriteTime > targetFileTimestamp.Value)
+                                {
+                                    Log("Sync file:{0} timestamp:{1} {2}",
+                                        targetFile, 
+                                        sourceFileInfo.LastWriteTime.ToDateTimeString(),
+                                        targetFileTimestamp.Value.ToDateTimeString());
+                                    dirty = true;
+                                }
+
+                                if (dirty)
+                                {
+                                    fileUploadWorker.Add(i);
+                                }
+                                break;
+                            }
+                            catch (Exception ex)
+                            {
+                                LogError("Sync file:{0} exception:{1}", targetFile, ex);
+                                syncClient.Close();
+                                Thread.Sleep(1000);
+                            }
                         }
                     }
                 }
@@ -101,7 +116,19 @@ namespace RemoteSync
             var syncClient = syncClientFactory.Create(target);
             syncClient.Test();
 
-            var fileUploadWorker = new FileUploadWorker(syncClient, source, Log, LogError);
+            var syncIgnoreFile = Path.Combine(source, ".syncignore");
+            Func<string, bool> validateFile;
+            if (File.Exists(syncIgnoreFile))
+            {
+                var ignoreFiles = File.ReadAllLines(syncIgnoreFile);
+                validateFile = file => file != ".syncignore" && !ignoreFiles.Any(i => file.StartsWith(i));
+            }
+            else
+            {
+                validateFile = file => true;
+            }
+
+            var fileUploadWorker = new FileUploadWorker(syncClient, source, validateFile, Log, LogError);
             SyncAsync(syncClientFactory, fileUploadWorker, source, target);
 
             Log("Watch started");
@@ -119,14 +146,10 @@ namespace RemoteSync
                 fswatchProcess.WorkingDirectory = source;
                 fswatchProcess.OutputReader = data =>
                 {
-                    if (!string.IsNullOrEmpty(data) && ShouldSync(data))
+                    if (!string.IsNullOrEmpty(data) && (File.Exists(data) || Directory.Exists(data)) &&
+                        fileUploadWorker.ValidateFile(data))
                     {
-                        var targetFile = data;
-                        if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
-                        {
-                            targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
-                        }
-
+                        Log("Changed file:{0}", fileUploadWorker.ResolveTargetFile(data));
                         fileUploadWorker.Add(data);
                     }
                 };
@@ -147,14 +170,10 @@ namespace RemoteSync
                     for (;;)
                     {
                         var r = fsw.WaitForChanged(WatcherChangeTypes.All);
-                        if (!r.TimedOut && ShouldSync(r.Name))
+                        if (!r.TimedOut && (File.Exists(r.Name) || Directory.Exists(r.Name)) &&
+                            fileUploadWorker.ValidateFile(r.Name))
                         {
-                            var targetFile = r.Name;
-                            if (targetFile.StartsWith(source, StringComparison.OrdinalIgnoreCase))
-                            {
-                                targetFile = targetFile.Substring(source.Length).TrimStart(Path.DirectorySeparatorChar);
-                            }
-
+                            Log("Changed file:{0}", fileUploadWorker.ResolveTargetFile(r.Name));
                             fileUploadWorker.Add(r.Name);
                         }
                     }

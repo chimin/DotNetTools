@@ -11,24 +11,47 @@ namespace RemoteSync
     {
         private ISyncClient syncClient;
         private string sourceDirectory;
+        private Func<string, bool> validateFile;
         private Action<string, object[]> log;
         private Action<Exception> logError;
         private HashSet<string> queues = new HashSet<string>();
         private Task task;
 
         public FileUploadWorker(ISyncClient syncClient, string sourceDirectory,
+                                Func<string, bool> validateFile,
                                 Action<string, object[]> log,
                                 Action<Exception> logError)
         {
             this.syncClient = syncClient;
             this.sourceDirectory = sourceDirectory;
+            this.validateFile = validateFile;
             this.log = log;
             this.logError = logError;
         }
 
+        public string ResolveTargetFile(string sourceFile)
+        {
+            var targetFile = sourceFile;
+            if (targetFile.StartsWith(sourceDirectory))
+            {
+                targetFile = targetFile.Substring(sourceDirectory.Length).TrimStart(Path.DirectorySeparatorChar);
+            }
+            if (Path.DirectorySeparatorChar != '/')
+            {
+                targetFile = targetFile.Replace(Path.DirectorySeparatorChar, '/');
+            }
+            return targetFile;
+        }
+
+        public bool ValidateFile(string sourceFile)
+        {
+            return validateFile(ResolveTargetFile(sourceFile));
+        }
+
         public bool Add(string sourceFile)
         {
-            if (sourceFile.Split(Path.DirectorySeparatorChar).Any(i => i.StartsWith(".")))
+            var targetFile = ResolveTargetFile(sourceFile);
+            if (!validateFile(targetFile))
             {
                 return false;
             }
@@ -55,12 +78,16 @@ namespace RemoteSync
                                     }
                                     else
                                     {
-                                        log("Waiting", new object[0]);
+                                        log("Idle", new object[0]);
                                         task = null;
                                         break;
                                     }
                                 }
-                                Upload(thisSourceFile);
+
+                                if (File.Exists(thisSourceFile) || Directory.Exists(thisSourceFile))
+                                {
+                                    Upload(thisSourceFile);
+                                }
                             }
                             catch (Exception ex)
                             {
@@ -91,12 +118,7 @@ namespace RemoteSync
             }
             else
             {
-                var targetFile = sourceFile;
-                if (targetFile.StartsWith(sourceDirectory))
-                {
-                    targetFile = targetFile.Substring(sourceDirectory.Length).TrimStart(Path.DirectorySeparatorChar);
-                }
-
+                var targetFile = ResolveTargetFile(sourceFile);
                 log("Upload file:{0}", new[] { targetFile });
                 syncClient.Upload(sourceFile, targetFile);
             }

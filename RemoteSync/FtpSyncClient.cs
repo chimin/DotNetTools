@@ -86,7 +86,7 @@ namespace RemoteSync
             }
         }
 
-        public long GetFileSize(string targetFile)
+        public long? GetFileSize(string targetFile)
         {
             if (!targetFile.StartsWith("/"))
             {
@@ -98,8 +98,22 @@ namespace RemoteSync
                 ftp.Connect();
             }
 
-            var fileSize = ftp.GetFileSize(targetFile);
-            return fileSize;
+            return ftp.GetFileSize(targetFile);
+        }
+
+        public DateTime? GetFileTimestamp(string targetFile)
+        {
+            if (!targetFile.StartsWith("/"))
+            {
+                targetFile = directory + "/" + targetFile;
+            }
+
+            if (!ftp.IsConnected)
+            {
+                ftp.Connect();
+            }
+
+            return ftp.GetModifiedTime(targetFile);
         }
 
         public void Close()

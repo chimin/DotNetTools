@@ -46,6 +46,7 @@
     <Compile Include="SimpleProcess.cs" />
     <Compile Include="FtpSyncClient.cs" />
     <Compile Include="FileUploadWorker.cs" />
+    <Compile Include="ParseUtils.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

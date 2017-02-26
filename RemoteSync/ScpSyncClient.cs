@@ -80,7 +80,7 @@ namespace RemoteSync
             }
         }
 
-        public long GetFileSize(string targetFile)
+        private string Stat(string targetFile)
         {
             if (!targetFile.StartsWith("/"))
             {
@@ -92,9 +92,52 @@ namespace RemoteSync
                 ssh.Connect();
             }
 
-            var info = ssh.RunCommand("ls -l \"" + targetFile + "\"").Result.Trim();
-            var fileSize = !string.IsNullOrEmpty(info) ? long.Parse(info.Split(' ')[4]) : 0;
-            return fileSize;
+            return ssh.RunCommand("stat \"" + targetFile + "\"").Result;
+        }
+
+        public long? GetFileSize(string targetFile)
+        {
+            var stat = Stat(targetFile);
+            var match = Regex.Match(stat, @"Size: (\d+)");
+            if (match.Success)
+            {
+                return long.Parse(match.Groups[1].Value);
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        public DateTime? GetFileTimestamp(string targetFile)
+        {
+            var stat = Stat(targetFile);
+            var match = Regex.Match(stat, @"Modify: (\d+)-(\d+)-(\d+) (\d+):(\d+):(\d+)\.(\d+) ([+-]\d{2})(\d{2})");
+            if (match.Success)
+            {
+                var i = 1;
+                var year = int.Parse(match.Groups[i++].Value);
+                var month = int.Parse(match.Groups[i++].Value);
+                var day = int.Parse(match.Groups[i++].Value);
+                var hour = int.Parse(match.Groups[i++].Value);
+                var minute = int.Parse(match.Groups[i++].Value);
+                var second = int.Parse(match.Groups[i++].Value) + double.Parse("0." + match.Groups[i++].Value);
+                var offsetHour = int.Parse(match.Groups[i++].Value);
+                var offsetMinute = int.Parse(match.Groups[i++].Value);
+                var offset = new TimeSpan(0, Math.Abs(offsetHour), offsetMinute);
+                if (offsetHour < 0)
+                {
+                    offset = offset.Negate();
+                }
+                return new DateTime(year, month, day, hour, minute, 0, DateTimeKind.Utc)
+                    .Add(TimeSpan.FromSeconds(second))
+                    .Add(offset)
+                    .ToLocalTime();
+            }
+            else
+            {
+                return null;
+            }
         }
 
         public void Close()

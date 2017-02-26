@@ -6,7 +6,8 @@ namespace RemoteSync
     {
         void Test();
         void Upload(string sourceFile, string targetFile);
-        long GetFileSize(string targetFile);
+        long? GetFileSize(string targetFile);
+        DateTime? GetFileTimestamp(string targetFile);
         void Close();
     }
 
