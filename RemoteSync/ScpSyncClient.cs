@@ -124,7 +124,7 @@ namespace RemoteSync
                 var second = int.Parse(match.Groups[i++].Value) + double.Parse("0." + match.Groups[i++].Value);
                 var offsetHour = int.Parse(match.Groups[i++].Value);
                 var offsetMinute = int.Parse(match.Groups[i++].Value);
-                var offset = new TimeSpan(0, Math.Abs(offsetHour), offsetMinute);
+                var offset = new TimeSpan(Math.Abs(offsetHour), offsetMinute, 0);
                 if (offsetHour < 0)
                 {
                     offset = offset.Negate();
