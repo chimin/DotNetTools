@@ -10,6 +10,8 @@ namespace RemoteSync
     {
         private Renci.SshNet.SshClient ssh;
         private Renci.SshNet.ScpClient scp;
+        private string user;
+        private string host;
         private string directory;
 
         public ScpSyncClient(string target)
@@ -21,10 +23,27 @@ namespace RemoteSync
                 throw new ArgumentException("Invalid target " + target);
             }
 
-            var user = match.Groups[1].Value;
-            var host = match.Groups[2].Value;
+            user = match.Groups[1].Value;
+            host = match.Groups[2].Value;
             directory = match.Groups[3].Value.TrimEnd('/');
+        }
 
+        public void Dispose()
+        {
+            if (ssh != null)
+            {
+                ssh.Dispose();
+            }
+            if (scp != null)
+            {
+                scp.Dispose();
+            }
+            ssh = null;
+            scp = null;
+        }
+
+        private static Renci.SshNet.PrivateKeyFile[]GetKeyFiles()
+        {
             var keyDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".ssh");
             var keyFilePaths = new List<string>();
             foreach (var i in Directory.EnumerateFiles(keyDirectory))
@@ -34,24 +53,38 @@ namespace RemoteSync
                     keyFilePaths.Add(i);
                 }
             }
-            var keyFiles = keyFilePaths.Select(i => new Renci.SshNet.PrivateKeyFile(i)).ToArray();
-
-            ssh = new Renci.SshNet.SshClient(host, user, keyFiles);
-            scp = new Renci.SshNet.ScpClient(host, user, keyFiles);
+            return keyFilePaths.Select(i => new Renci.SshNet.PrivateKeyFile(i)).ToArray();
         }
 
-        public void Dispose()
+        private Renci.SshNet.SshClient GetSshClient()
         {
-            ssh.Dispose();
-            scp.Dispose();
-        }
-
-        public void Test()
-        {
+            if (ssh == null)
+            {
+                ssh = new Renci.SshNet.SshClient(host, user, GetKeyFiles());
+            }
             if (!ssh.IsConnected)
             {
                 ssh.Connect();
             }
+            return ssh;
+        }
+
+        private Renci.SshNet.ScpClient GetScpClient()
+        {
+            if (scp == null)
+            {
+                scp = new Renci.SshNet.ScpClient(host, user, GetKeyFiles());
+            }
+            if (!scp.IsConnected)
+            {
+                scp.Connect();
+            }
+            return scp;
+        }
+
+        public void Test()
+        {
+            GetSshClient();
         }
 
         public void Upload(string sourceFile, string targetFile)
@@ -61,19 +94,45 @@ namespace RemoteSync
                 targetFile = directory + "/" + targetFile;
             }
 
-            if (!scp.IsConnected)
-            {
-                scp.Connect();
-            }
+            var triedDelete = false;
+            var triedMkdir = false;
 
+        PerformAction:
+            var scp = GetScpClient();
             try
             {
                 scp.Upload(new FileInfo(sourceFile), targetFile);
             }
             catch (Renci.SshNet.Common.ScpException ex)
             {
-                if (!Regex.IsMatch(ex.Message, 
-                                   "^scp: .*: set times: Operation not permitted$"))
+                if (!triedDelete && Regex.IsMatch(ex.Message,
+                                                  "Permission denied$"))
+                {
+                    var ssh = GetSshClient();
+                    ssh.RunCommand("rm -f \"" + targetFile + "\"");
+                    triedDelete = true;
+                    goto PerformAction;
+                }
+                else if (!triedMkdir && Regex.IsMatch(ex.Message,
+                                                      "^scp: No such file or directory"))
+                {
+                    var ssh = GetSshClient();
+                    var separator = targetFile.LastIndexOf('/');
+                    if (separator >= 0)
+                    {
+                        var targetDirectory = targetFile.Substring(0, separator);
+                        ssh.RunCommand("mkdir -p \"" + targetDirectory + "\"");
+                        triedMkdir = true;
+                        goto PerformAction;
+
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+                else if (!Regex.IsMatch(ex.Message,
+                  "^scp: .*: set times: Operation not permitted$"))
                 {
                     throw;
                 }
@@ -82,17 +141,28 @@ namespace RemoteSync
 
         private string Stat(string targetFile)
         {
-            if (!targetFile.StartsWith("/"))
+            try
             {
-                targetFile = directory + "/" + targetFile;
-            }
+                if (!targetFile.StartsWith("/"))
+                {
+                    targetFile = directory + "/" + targetFile;
+                }
 
-            if (!ssh.IsConnected)
+                var ssh = GetSshClient();
+                return ssh.RunCommand("stat \"" + targetFile + "\"").Result;
+            }
+            catch (Renci.SshNet.Common.SshException ex)
             {
-                ssh.Connect();
+                if (Regex.IsMatch(ex.Message,
+                                  "^stat: .*: No such file or directory$"))
+                {
+                    return null;
+                }
+                else
+                {
+                    throw;
+                }
             }
-
-            return ssh.RunCommand("stat \"" + targetFile + "\"").Result;
         }
 
         public long? GetFileSize(string targetFile)
@@ -150,6 +220,8 @@ namespace RemoteSync
             {
                 scp.Disconnect();
             }
+            ssh = null;
+            scp = null;
         }
     }
 

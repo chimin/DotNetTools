@@ -27,22 +27,37 @@ namespace RemoteSync
             password = match.Groups[2].Value;
             host = match.Groups[3].Value;
             directory = match.Groups[4].Value;
-
-            ftp = new FluentFTP.FtpClient
-            {
-                Host = host,
-                Credentials = new System.Net.NetworkCredential(user, password),
-            };
         }
 
         public void Dispose()
         {
-            ftp.Dispose();
+            if (ftp != null)
+            {
+                ftp.Dispose();
+            }
+            ftp = null;
+        }
+
+        private FluentFTP.FtpClient GetFtpClient()
+        {
+            if (ftp == null)
+            {
+                ftp = new FluentFTP.FtpClient
+                {
+                    Host = host,
+                    Credentials = new System.Net.NetworkCredential(user, password),
+                };
+            }
+            if (!ftp.IsConnected)
+            {
+                ftp.Connect();
+            }
+            return ftp;
         }
 
         public void Test()
         {
-            ftp.Connect();
+            GetFtpClient();
         }
 
         private Stream OpenWrite(string targetFile)
@@ -52,11 +67,7 @@ namespace RemoteSync
                 targetFile = directory + "/" + targetFile;
             }
 
-            if (!ftp.IsConnected)
-            {
-                ftp.Connect();
-            }
-
+            var ftp = GetFtpClient();
             try
             {
                 return ftp.OpenWrite(targetFile);
@@ -93,11 +104,7 @@ namespace RemoteSync
                 targetFile = directory + "/" + targetFile;
             }
 
-            if (!ftp.IsConnected)
-            {
-                ftp.Connect();
-            }
-
+            var ftp = GetFtpClient();
             return ftp.GetFileSize(targetFile);
         }
 
@@ -108,17 +115,17 @@ namespace RemoteSync
                 targetFile = directory + "/" + targetFile;
             }
 
-            if (!ftp.IsConnected)
-            {
-                ftp.Connect();
-            }
-
+            var ftp = GetFtpClient();
             return ftp.GetModifiedTime(targetFile);
         }
 
         public void Close()
         {
-            ftp.Disconnect();
+            if (ftp != null)
+            {
+                ftp.Disconnect();
+            }
+            ftp = null;
         }
     }
 
