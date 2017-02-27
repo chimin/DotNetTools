@@ -54,21 +54,19 @@ namespace RemoteSync
                             {
                                 var dirty = false;
                                 var sourceFileInfo = new FileInfo(i);
-                                var targetFileSize = syncClient.GetFileSize(targetFile);
-                                if (targetFileSize != null && sourceFileInfo.Length != targetFileSize.Value)
+                                var targetFileInfo = syncClient.GetFileInfo(targetFile);
+                                if (targetFileInfo?.Size != null && sourceFileInfo.Length != targetFileInfo.Size.Value)
                                 {
                                     Log("Sync file:{0} size:{1} {2}", 
-                                        targetFile, sourceFileInfo.Length, targetFileSize.Value);
+                                        targetFile, sourceFileInfo.Length, targetFileInfo.Size.Value);
                                     dirty = true;
                                 }
-
-                                var targetFileTimestamp = syncClient.GetFileTimestamp(targetFile);
-                                if (targetFileTimestamp != null && sourceFileInfo.LastWriteTime > targetFileTimestamp.Value)
+                                if (targetFileInfo?.Timestamp != null && sourceFileInfo.LastWriteTime > targetFileInfo.Timestamp.Value)
                                 {
                                     Log("Sync file:{0} timestamp:{1} {2}",
                                         targetFile, 
                                         sourceFileInfo.LastWriteTime.ToDateTimeString(),
-                                        targetFileTimestamp.Value.ToDateTimeString());
+                                        targetFileInfo.Timestamp.Value.ToDateTimeString());
                                     dirty = true;
                                 }
 

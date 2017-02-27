@@ -6,9 +6,14 @@ namespace RemoteSync
     {
         void Test();
         void Upload(string sourceFile, string targetFile);
-        long? GetFileSize(string targetFile);
-        DateTime? GetFileTimestamp(string targetFile);
+        SyncFileInfo GetFileInfo(string targetFile);
         void Close();
+    }
+
+    class SyncFileInfo
+    {
+        public long? Size;
+        public DateTime? Timestamp;
     }
 
     interface ISyncClientFactory

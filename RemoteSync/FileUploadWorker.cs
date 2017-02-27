@@ -60,7 +60,7 @@ namespace RemoteSync
             {
                 queues.Add(sourceFile);
 
-                if (task == null || task.IsCompleted)
+                if (task?.IsCompleted ?? true)
                 {
                     task = Task.Factory.StartNew(() =>
                     {
@@ -96,7 +96,10 @@ namespace RemoteSync
                                 Thread.Sleep(1000);
                                 if (!string.IsNullOrEmpty(thisSourceFile))
                                 {
-                                    Add(thisSourceFile);
+                                    lock (queues)
+                                    {
+                                        queues.Add(thisSourceFile);
+                                    }
                                 }
                             }
                         }

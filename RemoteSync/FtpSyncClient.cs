@@ -31,10 +31,7 @@ namespace RemoteSync
 
         public void Dispose()
         {
-            if (ftp != null)
-            {
-                ftp.Dispose();
-            }
+            ftp?.Dispose();
             ftp = null;
         }
 
@@ -97,7 +94,7 @@ namespace RemoteSync
             }
         }
 
-        public long? GetFileSize(string targetFile)
+        public SyncFileInfo GetFileInfo(string targetFile)
         {
             if (!targetFile.StartsWith("/"))
             {
@@ -105,26 +102,16 @@ namespace RemoteSync
             }
 
             var ftp = GetFtpClient();
-            return ftp.GetFileSize(targetFile);
-        }
-
-        public DateTime? GetFileTimestamp(string targetFile)
-        {
-            if (!targetFile.StartsWith("/"))
+            return new SyncFileInfo
             {
-                targetFile = directory + "/" + targetFile;
-            }
-
-            var ftp = GetFtpClient();
-            return ftp.GetModifiedTime(targetFile);
+                Size = ftp.GetFileSize(targetFile),
+                Timestamp = ftp.GetModifiedTime(targetFile),
+            };
         }
 
         public void Close()
         {
-            if (ftp != null)
-            {
-                ftp.Disconnect();
-            }
+            ftp?.Disconnect();
             ftp = null;
         }
     }
