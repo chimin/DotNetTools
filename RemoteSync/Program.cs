@@ -120,7 +120,10 @@ namespace RemoteSync
             Func<string, bool> validateFile;
             if (File.Exists(syncIgnoreFile))
             {
-                var ignoreFiles = File.ReadAllLines(syncIgnoreFile);
+                var ignoreFiles = File.ReadAllLines(syncIgnoreFile)
+                                      .Where(i => !string.IsNullOrWhiteSpace(i))
+                                      .Select(i => i.Trim())
+                                      .ToArray();
                 validateFile = file => file != ".syncignore" && !ignoreFiles.Any(i => file.StartsWith(i));
             }
             else
