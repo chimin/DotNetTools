@@ -5,3 +5,5 @@ RemoteSync/obj
 RemoteSync/packages
 *.user
 *.userprefs
+.DS_Store
+*.suo

@@ -55,19 +55,27 @@ namespace RemoteSync
                                 var dirty = false;
                                 var sourceFileInfo = new FileInfo(i);
                                 var targetFileInfo = syncClient.GetFileInfo(targetFile);
-                                if (targetFileInfo?.Size != null && sourceFileInfo.Length != targetFileInfo.Size.Value)
+                                if (!targetFileInfo.Exists)
                                 {
-                                    Log("Sync file:{0} size:{1} {2}", 
-                                        targetFile, sourceFileInfo.Length, targetFileInfo.Size.Value);
+                                    Log("Sync file:{0} not exists", targetFile);
                                     dirty = true;
                                 }
-                                if (targetFileInfo?.Timestamp != null && sourceFileInfo.LastWriteTime > targetFileInfo.Timestamp.Value)
+                                else
                                 {
-                                    Log("Sync file:{0} timestamp:{1} {2}",
-                                        targetFile, 
-                                        sourceFileInfo.LastWriteTime.ToDateTimeString(),
-                                        targetFileInfo.Timestamp.Value.ToDateTimeString());
-                                    dirty = true;
+                                    if (targetFileInfo?.Size != null && sourceFileInfo.Length != targetFileInfo.Size.Value)
+                                    {
+                                        Log("Sync file:{0} size:{1} {2}",
+                                            targetFile, sourceFileInfo.Length, targetFileInfo.Size.Value);
+                                        dirty = true;
+                                    }
+                                    if (targetFileInfo?.Timestamp != null && sourceFileInfo.LastWriteTime > targetFileInfo.Timestamp.Value)
+                                    {
+                                        Log("Sync file:{0} timestamp:{1} {2}",
+                                            targetFile,
+                                            sourceFileInfo.LastWriteTime.ToDateTimeString(),
+                                            targetFileInfo.Timestamp.Value.ToDateTimeString());
+                                        dirty = true;
+                                    }
                                 }
 
                                 if (dirty)
@@ -130,7 +138,18 @@ namespace RemoteSync
             }
 
             var fileUploadWorker = new FileUploadWorker(syncClient, source, validateFile, Log, LogError);
-            SyncAsync(syncClientFactory, fileUploadWorker, source, target);
+            var syncTask = SyncAsync(syncClientFactory, fileUploadWorker, source, target);
+            fileUploadWorker.Idle += () =>
+            {
+                if (syncTask.IsCompleted)
+                {
+                    Log("Idle", new object[0]);
+                }
+                else
+                {
+                    Log("Still syncing", new object[0]);
+                }
+            };
 
             Log("Watch started");
             var fswatchProcess = new SimpleProcess
@@ -138,7 +157,7 @@ namespace RemoteSync
                 FileName = "/usr/local/bin/fswatch",
                 Arguments = "--help",
             };
-            if (fswatchProcess.Run() == 0)
+            if (File.Exists(fswatchProcess.FileName) && fswatchProcess.Run() == 0)
             {
                 Log("Use fswatch");
 
@@ -171,11 +190,12 @@ namespace RemoteSync
                     for (;;)
                     {
                         var r = fsw.WaitForChanged(WatcherChangeTypes.All);
-                        if (!r.TimedOut && (File.Exists(r.Name) || Directory.Exists(r.Name)) &&
-                            fileUploadWorker.ValidateFile(r.Name))
+                        var file = Path.Combine(fsw.Path, r.Name);
+                        if (!r.TimedOut && (File.Exists(file) || Directory.Exists(file)) &&
+                            fileUploadWorker.ValidateFile(file))
                         {
-                            Log("Changed file:{0}", fileUploadWorker.ResolveTargetFile(r.Name));
-                            fileUploadWorker.Add(r.Name);
+                            Log("Changed file:{0} type:{1}", fileUploadWorker.ResolveTargetFile(file), r.ChangeType);
+                            fileUploadWorker.Add(file);
                         }
                     }
                 }

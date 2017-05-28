@@ -17,6 +17,8 @@ namespace RemoteSync
         private HashSet<string> queues = new HashSet<string>();
         private Task task;
 
+        public Action Idle { get; set; }
+
         public FileUploadWorker(ISyncClient syncClient, string sourceDirectory,
                                 Func<string, bool> validateFile,
                                 Action<string, object[]> log,
@@ -78,7 +80,7 @@ namespace RemoteSync
                                     }
                                     else
                                     {
-                                        log("Idle", new object[0]);
+                                        Idle?.Invoke();
                                         task = null;
                                         break;
                                     }
@@ -114,7 +116,7 @@ namespace RemoteSync
         {
             if (Directory.Exists(sourceFile))
             {
-                foreach (var i in Directory.EnumerateFiles(sourceFile))
+                foreach (var i in Directory.EnumerateFileSystemEntries(sourceFile))
                 {
                     Add(i);
                 }

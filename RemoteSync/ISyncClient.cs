@@ -12,6 +12,7 @@ namespace RemoteSync
 
     class SyncFileInfo
     {
+        public bool Exists;
         public long? Size;
         public DateTime? Timestamp;
     }
