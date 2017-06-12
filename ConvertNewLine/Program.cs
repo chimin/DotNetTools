@@ -1,4 +1,5 @@
-﻿using System;
+using LibGit2Sharp;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -7,14 +8,57 @@ namespace ConvertNewLine
 {
     class MainClass
     {
+        private static IEnumerable<string> EnumerateFiles(string directory, IEnumerable<string> extensions)
+        {
+            foreach (var i in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                if (i.Split(Path.DirectorySeparatorChar).Any(j => j.StartsWith(".")))
+                {
+                    continue;
+                }
+
+                if (!extensions?.Any(j => i.EndsWith("." + j, StringComparison.OrdinalIgnoreCase)) ?? false)
+                {
+                    continue;
+                }
+
+                yield return i;
+            }
+        }
+
+        private static IEnumerable<string> EnumerateGitFiles(string directory)
+        {
+            using (var repository = new Repository(directory))
+            {
+                foreach (var i in repository.RetrieveStatus().Where(i => i.State == FileStatus.ModifiedInWorkdir))
+                {
+                    var file = Path.Combine(directory, i.FilePath);
+                    if (File.Exists(file))
+                    {
+                        yield return file;
+                    }
+                }
+            }
+            yield break;
+        }
+
         public static void Main(string[] args)
         {
             var argIndex = 0;
-            var newlineType = args[argIndex++];
+            var newlineType = args.Length > 1 ? args[argIndex++] : null;
+            var type = (string)null;
             var extensions = new List<string>();
             while (argIndex < args.Length - 1)
             {
-                extensions.Add(args[argIndex++].TrimStart('.'));
+                var arg = args[argIndex++];
+                if (arg.StartsWith("."))
+                {
+                    extensions.Add(arg.TrimStart('.'));
+                }
+                else if (type == null)
+                {
+                    type = arg;
+                }
             }
             var directory = args[argIndex++];
 
@@ -23,27 +67,32 @@ namespace ConvertNewLine
             {
                 case "crlf": newline = "\r\n"; break;
                 case "cr": newline = "\r"; break;
-                case "lf": newline = "\n"; break;
+                case "lf":
+                case null: newline = "\n"; break;
                 default: throw new InvalidOperationException("Invalid newline type " + newlineType);
             }
 
-            var tempFile = Path.GetTempFileName();
-            foreach (var i in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            if (type == null && extensions.Any())
             {
-                if (i.Split(Path.DirectorySeparatorChar).Any(j => j.StartsWith(".")))
-                {
-                    continue;
-                }
+                type = "files";
+            }
+            else if (Repository.IsValid(directory))
+            {
+                type = "git";
+            }
 
-                var allowBinary = extensions.Count > 0;
-                if (extensions.Count > 0)
-                {
-                    if (!extensions.Any(j => i.EndsWith("." + j, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        continue;
-                    }
-                }
-
+            var tempFile = Path.GetTempFileName();
+            var files = type == "git" ? EnumerateGitFiles(directory) :
+                type == "files" ? EnumerateFiles(directory, extensions) :
+                null;
+            var allowBinary = true;
+            if (files == null)
+            {
+                allowBinary = false;
+                files = EnumerateFiles(directory, null);
+            }
+            foreach (var i in files)
+            {
                 var valid = true;
                 using (var writer = File.CreateText(tempFile))
                 using (var reader = File.OpenText(i))
@@ -68,7 +117,7 @@ namespace ConvertNewLine
                             valid = false;
                             break;
                         }
-                        else 
+                        else
                         {
                             writer.Write((char)c);
                         }
@@ -83,7 +132,14 @@ namespace ConvertNewLine
                         file = file.Substring(directory.Length).TrimStart(Path.DirectorySeparatorChar);
                     }
                     Console.WriteLine("Updated file:{0}", file);
-                    File.Copy(tempFile, i, true);
+                    try
+                    {
+                        File.Copy(tempFile, i, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.Error.WriteLine(ex);
+                    }
                 }
             }
         }
