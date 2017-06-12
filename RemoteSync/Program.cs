@@ -80,7 +80,7 @@ namespace RemoteSync
 
                                 if (dirty)
                                 {
-                                    fileUploadWorker.Add(i);
+                                    fileUploadWorker.Add(i, false);
                                 }
                                 break;
                             }
@@ -152,51 +152,21 @@ namespace RemoteSync
             };
 
             Log("Watch started");
-            var fswatchProcess = new SimpleProcess
+            using (var fsw = new FileSystemWatcher
             {
-                FileName = "/usr/local/bin/fswatch",
-                Arguments = "--help",
-            };
-            if (File.Exists(fswatchProcess.FileName) && fswatchProcess.Run() == 0)
+                Path = source,
+                IncludeSubdirectories = true,
+            })
             {
-                Log("Use fswatch");
-
-                // use fswatch if possible because FileSystemWatcher is not working nice on Mono
-                fswatchProcess.Arguments = "-r .";
-                fswatchProcess.WorkingDirectory = source;
-                fswatchProcess.OutputReader = data =>
+                for (;;)
                 {
-                    if (!string.IsNullOrEmpty(data) && (File.Exists(data) || Directory.Exists(data)) &&
-                        fileUploadWorker.ValidateFile(data))
+                    var r = fsw.WaitForChanged(WatcherChangeTypes.All);
+                    var file = Path.Combine(fsw.Path, r.Name);
+                    if (!r.TimedOut && (File.Exists(file) || Directory.Exists(file)) &&
+                        fileUploadWorker.ValidateFile(file))
                     {
-                        Log("Changed file:{0}", fileUploadWorker.ResolveTargetFile(data));
-                        fileUploadWorker.Add(data);
-                    }
-                };
-
-                var exitCode = fswatchProcess.Run();
-                throw new InvalidOperationException("Fswatch terminated unexpectedly code:" + exitCode.ToString());
-            }
-            else
-            {
-                Log("Use FileSystemWatcher");
-                
-                using (var fsw = new FileSystemWatcher
-                {
-                    Path = source,
-                    IncludeSubdirectories = true,
-                })
-                {
-                    for (;;)
-                    {
-                        var r = fsw.WaitForChanged(WatcherChangeTypes.All);
-                        var file = Path.Combine(fsw.Path, r.Name);
-                        if (!r.TimedOut && (File.Exists(file) || Directory.Exists(file)) &&
-                            fileUploadWorker.ValidateFile(file))
-                        {
-                            Log("Changed file:{0} type:{1}", fileUploadWorker.ResolveTargetFile(file), r.ChangeType);
-                            fileUploadWorker.Add(file);
-                        }
+                        Log("Changed file:{0} type:{1}", fileUploadWorker.ResolveTargetFile(file), r.ChangeType);
+                        fileUploadWorker.Add(file, true);
                     }
                 }
             }

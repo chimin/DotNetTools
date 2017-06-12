@@ -14,7 +14,7 @@ namespace RemoteSync
         private Func<string, bool> validateFile;
         private Action<string, object[]> log;
         private Action<Exception> logError;
-        private HashSet<string> queues = new HashSet<string>();
+        private LinkedList<string> queues = new LinkedList<string>();
         private Task task;
 
         public Action Idle { get; set; }
@@ -50,7 +50,7 @@ namespace RemoteSync
             return validateFile(ResolveTargetFile(sourceFile));
         }
 
-        public bool Add(string sourceFile)
+        public bool Add(string sourceFile, bool immediate)
         {
             var targetFile = ResolveTargetFile(sourceFile);
             if (!validateFile(targetFile))
@@ -60,7 +60,17 @@ namespace RemoteSync
 
             lock (queues)
             {
-                queues.Add(sourceFile);
+                if (!queues.Contains(sourceFile))
+                {
+                    if (immediate)
+                    {
+                        queues.AddFirst(sourceFile);
+                    }
+                    else
+                    {
+                        queues.AddLast(sourceFile);
+                    }
+                }
 
                 if (task?.IsCompleted ?? true)
                 {
@@ -100,7 +110,7 @@ namespace RemoteSync
                                 {
                                     lock (queues)
                                     {
-                                        queues.Add(thisSourceFile);
+                                        queues.AddLast(thisSourceFile);
                                     }
                                 }
                             }
@@ -118,7 +128,7 @@ namespace RemoteSync
             {
                 foreach (var i in Directory.EnumerateFileSystemEntries(sourceFile))
                 {
-                    Add(i);
+                    Add(i, false);
                 }
             }
             else
