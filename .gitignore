@@ -7,3 +7,4 @@ RemoteSync/packages
 *.userprefs
 .DS_Store
 *.suo
+ConvertNewLine/packages/
