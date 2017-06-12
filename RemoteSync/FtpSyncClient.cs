@@ -104,6 +104,7 @@ namespace RemoteSync
             var ftp = GetFtpClient();
             return new SyncFileInfo
             {
+                Exists = ftp.FileExists(targetFile),
                 Size = ftp.GetFileSize(targetFile),
                 Timestamp = ftp.GetModifiedTime(targetFile),
             };

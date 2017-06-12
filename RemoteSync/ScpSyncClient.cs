@@ -143,9 +143,14 @@ namespace RemoteSync
                 }
 
                 var ssh = GetSshClient();
-                var stat = ssh.RunCommand("stat \"" + targetFile + "\"").Result;
+                var result = ssh.RunCommand("stat \"" + targetFile + "\"");
+                var stat = result.Result;
+                var error = result.Error;
 
-                var fileInfo = new SyncFileInfo();
+                var fileInfo = new SyncFileInfo
+                {
+                    Exists = string.IsNullOrWhiteSpace(error),
+                };
                 {
                     var match = Regex.Match(stat, @"Size: (\d+)");
                     if (match.Success)
@@ -195,8 +200,8 @@ namespace RemoteSync
 
         public void Close()
         {
-            ssh?.Disconnect();
-            scp?.Disconnect();
+            try { ssh?.Disconnect(); } catch { }
+            try { scp?.Disconnect(); } catch { }
             ssh = null;
             scp = null;
         }

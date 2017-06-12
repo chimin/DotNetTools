@@ -55,19 +55,27 @@ namespace RemoteSync
                                 var dirty = false;
                                 var sourceFileInfo = new FileInfo(i);
                                 var targetFileInfo = syncClient.GetFileInfo(targetFile);
-                                if (targetFileInfo?.Size != null && sourceFileInfo.Length != targetFileInfo.Size.Value)
+                                if (!targetFileInfo.Exists)
                                 {
-                                    Log("Sync file:{0} size:{1} {2}", 
-                                        targetFile, sourceFileInfo.Length, targetFileInfo.Size.Value);
+                                    Log("Sync file:{0} not exists", targetFile);
                                     dirty = true;
                                 }
-                                if (targetFileInfo?.Timestamp != null && sourceFileInfo.LastWriteTime > targetFileInfo.Timestamp.Value)
+                                else
                                 {
-                                    Log("Sync file:{0} timestamp:{1} {2}",
-                                        targetFile, 
-                                        sourceFileInfo.LastWriteTime.ToDateTimeString(),
-                                        targetFileInfo.Timestamp.Value.ToDateTimeString());
-                                    dirty = true;
+                                    if (targetFileInfo?.Size != null && sourceFileInfo.Length != targetFileInfo.Size.Value)
+                                    {
+                                        Log("Sync file:{0} size:{1} {2}",
+                                            targetFile, sourceFileInfo.Length, targetFileInfo.Size.Value);
+                                        dirty = true;
+                                    }
+                                    if (targetFileInfo?.Timestamp != null && sourceFileInfo.LastWriteTime > targetFileInfo.Timestamp.Value)
+                                    {
+                                        Log("Sync file:{0} timestamp:{1} {2}",
+                                            targetFile,
+                                            sourceFileInfo.LastWriteTime.ToDateTimeString(),
+                                            targetFileInfo.Timestamp.Value.ToDateTimeString());
+                                        dirty = true;
+                                    }
                                 }
 
                                 if (dirty)
@@ -130,7 +138,18 @@ namespace RemoteSync
             }
 
             var fileUploadWorker = new FileUploadWorker(syncClient, source, validateFile, Log, LogError);
-            SyncAsync(syncClientFactory, fileUploadWorker, source, target);
+            var syncTask = SyncAsync(syncClientFactory, fileUploadWorker, source, target);
+            fileUploadWorker.Idle += () =>
+            {
+                if (syncTask.IsCompleted)
+                {
+                    Log("Idle", new object[0]);
+                }
+                else
+                {
+                    Log("Still syncing", new object[0]);
+                }
+            };
 
             Log("Watch started");
             var fswatchProcess = new SimpleProcess
