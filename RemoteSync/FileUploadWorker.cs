@@ -116,7 +116,7 @@ namespace RemoteSync
         {
             if (Directory.Exists(sourceFile))
             {
-                foreach (var i in Directory.EnumerateFiles(sourceFile))
+                foreach (var i in Directory.EnumerateFileSystemEntries(sourceFile))
                 {
                     Add(i);
                 }

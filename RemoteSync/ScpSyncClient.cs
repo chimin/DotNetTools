@@ -38,7 +38,7 @@ namespace RemoteSync
 
         private static Renci.SshNet.PrivateKeyFile[]GetKeyFiles()
         {
-            var keyDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".ssh");
+            var keyDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
             var keyFilePaths = new List<string>();
             foreach (var i in Directory.EnumerateFiles(keyDirectory))
             {

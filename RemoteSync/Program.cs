@@ -157,7 +157,7 @@ namespace RemoteSync
                 FileName = "/usr/local/bin/fswatch",
                 Arguments = "--help",
             };
-            if (fswatchProcess.Run() == 0)
+            if (File.Exists(fswatchProcess.FileName) && fswatchProcess.Run() == 0)
             {
                 Log("Use fswatch");
 
@@ -190,11 +190,12 @@ namespace RemoteSync
                     for (;;)
                     {
                         var r = fsw.WaitForChanged(WatcherChangeTypes.All);
-                        if (!r.TimedOut && (File.Exists(r.Name) || Directory.Exists(r.Name)) &&
-                            fileUploadWorker.ValidateFile(r.Name))
+                        var file = Path.Combine(fsw.Path, r.Name);
+                        if (!r.TimedOut && (File.Exists(file) || Directory.Exists(file)) &&
+                            fileUploadWorker.ValidateFile(file))
                         {
-                            Log("Changed file:{0}", fileUploadWorker.ResolveTargetFile(r.Name));
-                            fileUploadWorker.Add(r.Name);
+                            Log("Changed file:{0} type:{1}", fileUploadWorker.ResolveTargetFile(file), r.ChangeType);
+                            fileUploadWorker.Add(file);
                         }
                     }
                 }
