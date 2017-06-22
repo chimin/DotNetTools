@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -90,7 +90,20 @@ namespace RemoteSync
             using (var source = File.OpenRead(sourceFile))
             using (var target = OpenWrite(targetFile))
             {
-                source.CopyTo(target);
+                var buffer = new byte[0x10000];
+                SystemUtils.RunWithWatchdog(() =>
+                {
+                    var c = source.Read(buffer, 0, buffer.Length);
+                    if (c > 0)
+                    {
+                        target.Write(buffer, 0, c);
+                        return true;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }, TimeSpan.FromMinutes(1));
             }
         }
 

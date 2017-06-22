@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -36,7 +36,7 @@ namespace RemoteSync
             scp = null;
         }
 
-        private static Renci.SshNet.PrivateKeyFile[]GetKeyFiles()
+        private static Renci.SshNet.PrivateKeyFile[] GetKeyFiles()
         {
             var keyDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
             var keyFilePaths = new List<string>();
@@ -95,10 +95,38 @@ namespace RemoteSync
             var scp = GetScpClient();
             try
             {
-                scp.Upload(new FileInfo(sourceFile), targetFile);
+                var sync = new object();
+                var heartbeat = DateTime.Now;
+                EventHandler<Renci.SshNet.Common.ScpUploadEventArgs> callback = (s, e) =>
+                {
+                    lock (sync)
+                    {
+                        heartbeat = DateTime.Now;
+                    }
+                };
+                scp.Uploading += callback;
+                SystemUtils.RunWithWatchdog(() => scp.Upload(new FileInfo(sourceFile), targetFile),
+                    TimeSpan.FromMinutes(1), ref heartbeat, sync);
+                scp.Uploading -= callback;
             }
-            catch (Renci.SshNet.Common.ScpException ex)
+            catch (Exception ex)
             {
+                if (ex is ArgumentException)
+                {
+                    ex = ex.InnerException;
+                }
+
+                if (ex is TimeoutException)
+                {
+                    Close();
+                    throw;
+                }
+
+                if (!(ex is Renci.SshNet.Common.ScpException))
+                {
+                    throw;
+                }
+
                 if (!triedDelete && Regex.IsMatch(ex.Message,
                                                   "Permission denied$"))
                 {
