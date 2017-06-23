@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -81,7 +81,7 @@ namespace RemoteSync
                             var thisSourceFile = (string)null;
                             try
                             {
-                                lock (queues) 
+                                lock (queues)
                                 {
                                     if (queues.Count > 0)
                                     {
@@ -118,7 +118,7 @@ namespace RemoteSync
                     }, TaskCreationOptions.LongRunning);
                 }
             }
-                
+
             return true;
         }
 
@@ -133,8 +133,14 @@ namespace RemoteSync
             }
             else
             {
+                int remaining;
+                lock (queues)
+                {
+                    remaining = queues.Count;
+                }
+
                 var targetFile = ResolveTargetFile(sourceFile);
-                log("Upload file:{0}", new[] { targetFile });
+                log("Upload file:{0} remaining:{1}", new object[] { targetFile, remaining });
                 syncClient.Upload(sourceFile, targetFile);
             }
         }

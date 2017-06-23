@@ -49,6 +49,7 @@
     <Compile Include="IFileSystemWatcher.cs" />
     <Compile Include="DotnetFileSystemWatcher.cs" />
     <Compile Include="FswatchFileSystemWatcher.cs" />
+    <Compile Include="SystemUtils.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
