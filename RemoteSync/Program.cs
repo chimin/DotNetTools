@@ -151,21 +151,17 @@ namespace RemoteSync
                 }
             };
 
-            Log("Watch started");
-            using (var fsw = new FileSystemWatcher
+            using (var fsw = (IFileSystemWatcher)FswatchFileSystemWatcher.Create(source) ??
+                   new DotnetFileSystemWatcher(source))
             {
-                Path = source,
-                IncludeSubdirectories = true,
-            })
-            {
-                for (;;)
+                Log("Watch started using {0}", new[] { fsw.GetType() });
+				for (;;)
                 {
-                    var r = fsw.WaitForChanged(WatcherChangeTypes.All);
-                    var file = Path.Combine(fsw.Path, r.Name);
-                    if (!r.TimedOut && (File.Exists(file) || Directory.Exists(file)) &&
+                    var file = fsw.WaitForChanged();
+                    if ((File.Exists(file) || Directory.Exists(file)) &&
                         fileUploadWorker.ValidateFile(file))
                     {
-                        Log("Changed file:{0} type:{1}", fileUploadWorker.ResolveTargetFile(file), r.ChangeType);
+                        Log("Changed file:{0}", fileUploadWorker.ResolveTargetFile(file));
                         fileUploadWorker.Add(file, true);
                     }
                 }
