@@ -8,3 +8,16 @@ RemoteSync/packages
 .DS_Store
 *.suo
 ConvertNewLine/packages/
+ConvertResxToCsv/ConvertResxToCsv/bin/
+ConvertResxToCsv/ConvertResxToCsv/obj/
+ConvertResxToCsv/packages/
+ConvertStringsToCsv/ConvertStringsToCsv/bin/
+ConvertStringsToCsv/ConvertStringsToCsv/obj/
+ConvertStringsToCsv/packages/
+ConvertStringsXmlToCsv/ConvertStringsXmlToCsv/bin/
+ConvertStringsXmlToCsv/ConvertStringsXmlToCsv/obj/
+ConvertStringsXmlToCsv/packages/
+ConvertTable/ConvertTable/bin/
+ConvertTable/ConvertTable/obj/
+ConvertTable/packages/
+ConvertTable/.vs/
