@@ -26,13 +26,19 @@ namespace ConvertNewLine
             }
         }
 
-        private static IEnumerable<string> EnumerateGitFiles(string directory)
+        private static IEnumerable<string> EnumerateGitFiles(string directory, IEnumerable<string> extensions)
         {
             using (var repository = new Repository(directory))
             {
                 foreach (var i in repository.RetrieveStatus().Where(i => i.State == FileStatus.ModifiedInWorkdir))
                 {
                     var file = Path.Combine(directory, i.FilePath);
+
+                    if (!extensions?.Any(j => file.EndsWith("." + j, StringComparison.OrdinalIgnoreCase)) ?? false)
+                    {
+                        continue;
+                    }
+
                     if (File.Exists(file))
                     {
                         yield return file;
@@ -81,8 +87,13 @@ namespace ConvertNewLine
                 type = "git";
             }
 
+            if (!extensions.Any())
+            {
+                extensions = null;
+            }
+
             var tempFile = Path.GetTempFileName();
-            var files = type == "git" ? EnumerateGitFiles(directory) :
+            var files = type == "git" ? EnumerateGitFiles(directory, extensions) :
                 type == "files" ? EnumerateFiles(directory, extensions) :
                 null;
             var allowBinary = true;

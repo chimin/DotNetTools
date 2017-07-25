@@ -47,7 +47,18 @@ namespace RemoteSync
                     keyFilePaths.Add(i);
                 }
             }
-            return keyFilePaths.Select(i => new Renci.SshNet.PrivateKeyFile(i)).ToArray();
+            return keyFilePaths.Select(i =>
+            {
+                try
+                {
+                    var r = new Renci.SshNet.PrivateKeyFile(i);
+                    return r;
+                }
+                catch
+                {
+                    return null;
+                }
+            }).Where(i => i != null).ToArray();
         }
 
         private Renci.SshNet.SshClient GetSshClient()

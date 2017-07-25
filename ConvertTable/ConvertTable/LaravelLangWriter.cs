@@ -9,7 +9,7 @@ namespace ConvertTable
 {
     class LaravelLangWriter : ITableWriter
     {
-        private static Dictionary<char, string> phpStringSpecialChars = new Dictionary<char, string> {
+        private static Dictionary<char, string> phpStringDoubleQuoteSpecialChars = new Dictionary<char, string> {
             { '\\', @"\\" },
             { '\n', @"\n" },
             { '\r', @"\r" },
@@ -18,6 +18,11 @@ namespace ConvertTable
             { '"', @"\""" },
             { '$', @"\$" },
         };
+        private static Dictionary<char, string> phpStringSingleQuoteSpecialChars = new Dictionary<char, string> {
+            { '\\', @"\\" },
+            { '\'', @"\'" },
+        };
+        private static char[] phpStringDoubleQuoteChars = { '\n', '\r', '\t' };
 
         private static string EncodePhpString(string input)
         {
@@ -27,14 +32,16 @@ namespace ConvertTable
                 return number.ToString();
             }
 
+            var doubleQuote = phpStringDoubleQuoteChars.Intersect(input).Any();
+            var specialChars = doubleQuote ? phpStringDoubleQuoteSpecialChars : phpStringSingleQuoteSpecialChars;
+
             var sb = new StringBuilder();
-            var doubleQuote = false;
+            sb.Append(doubleQuote ? '"' : '\'');
             foreach (var i in input)
             {
                 string escaped;
-                if (phpStringSpecialChars.TryGetValue(i, out escaped))
+                if (specialChars.TryGetValue(i, out escaped))
                 {
-                    doubleQuote = true;
                     sb.Append(escaped);
                 }
                 else
@@ -42,16 +49,7 @@ namespace ConvertTable
                     sb.Append(i);
                 }
             }
-            if (doubleQuote)
-            {
-                sb.Insert(0, '"');
-                sb.Append('"');
-            }
-            else
-            {
-                sb.Insert(0, '\'');
-                sb.Append('\'');
-            }
+            sb.Append(doubleQuote ? '"' : '\'');
             return sb.ToString();
         }
 
@@ -95,26 +93,29 @@ namespace ConvertTable
                             var baseKey = key.Substring(0, seperator);
                             var pattern = baseKey + ".";
                             var subKeys = dict.Keys.Where(i => i.StartsWith(pattern)).ToArray();
-                            for (var i = 1; i < headers.Count; i++)
+                            if (subKeys.Any())
                             {
-                                var writer = writers[i - 1];
-                                writer.Write("\t");
-                                writer.Write(EncodePhpString(baseKey));
-                                writer.WriteLine(" => [");
-                                foreach (var j in subKeys)
+                                for (var i = 1; i < headers.Count; i++)
                                 {
-                                    var value = dict[j].ElementAtOrDefault(i)?.ToString();
-                                    if (!string.IsNullOrEmpty(value))
+                                    var writer = writers[i - 1];
+                                    writer.Write("\t");
+                                    writer.Write(EncodePhpString(baseKey));
+                                    writer.WriteLine(" => [");
+                                    foreach (var j in subKeys)
                                     {
-                                        var subKey = j.Substring(j.IndexOf('.') + 1);
-                                        writer.Write("\t\t");
-                                        writer.Write(EncodePhpString(subKey));
-                                        writer.Write(" => ");
-                                        writer.Write(EncodePhpString(value));
-                                        writer.WriteLine(",");
+                                        var value = dict[j].ElementAtOrDefault(i)?.ToString();
+                                        if (!string.IsNullOrEmpty(value))
+                                        {
+                                            var subKey = j.Substring(j.IndexOf('.') + 1);
+                                            writer.Write("\t\t");
+                                            writer.Write(EncodePhpString(subKey));
+                                            writer.Write(" => ");
+                                            writer.Write(EncodePhpString(value));
+                                            writer.WriteLine(",");
+                                        }
                                     }
+                                    writer.WriteLine("\t],");
                                 }
-                                writer.WriteLine("\t],");
                             }
                             foreach (var i in subKeys)
                             {

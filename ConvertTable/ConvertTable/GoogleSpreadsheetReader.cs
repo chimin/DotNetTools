@@ -53,7 +53,7 @@ namespace ConvertTable
 
             using (var stream = typeof(Program).Assembly.GetManifestResourceStream(typeof(Program), "client_secret.json"))
             {
-                string credPath = "GoogleCredential.json";
+                string credPath = ".GoogleCredential.json";
 
                 credential = GoogleWebAuthorizationBroker.AuthorizeAsync(
                     GoogleClientSecrets.Load(stream).Secrets,
